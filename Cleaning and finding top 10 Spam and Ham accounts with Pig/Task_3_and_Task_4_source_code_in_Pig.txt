@@ -1,0 +1,152 @@
+1) LOAD THE DATA IN A TABLE FRAME AND CHECK THE ROW COUNT AND TOP 10 DATA TO VERIFY
+
+tableframe = LOAD 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Cell_Phones_and_Accessories.json' USING JsonLoader('id:(oid:chararray), reviewerID:chararray, asin:chararray, reviewerName:chararray, helpful:{(h0:int, h1:int)}, reviewText:chararray, overall:int, summary:chararray, unixReviewTime:int, reviewTime:chararray, category:chararray, class:int');
+tablegroup = GROUP tableframe ALL;
+rowcount = FOREACH tablegroup GENERATE COUNT (tableframe.reviewerID);
+top10tableframe= LIMIT tableframe 5;
+dump top10tableframe;
+
+
+2)  CLEANING THE DATA AND STORING IT IN GOOGLE BUCKET
+cleanedtable1= FOREACH tableframe GENERATE id AS id, reviewerID AS reviewerID, reviewerName AS reviewerName, REPLACE(reviewText,'([^a-zA-Z\\s]+)','') AS reviewText, class AS class;
+cleanedtable2= FOREACH cleanedtable1 GENERATE id AS id, reviewerID AS reviewerID, reviewerName AS reviewerName, LOWER(reviewText) AS reviewText, class AS class;
+cleanedtable3 = FILTER cleanedtable2 BY reviewerName != 'Amazon Customer';
+cleanedtable4 = FILTER cleanedtable3 BY reviewerName is not null;
+cleanedtable5 = FILTER cleanedtable4 by reviewText is not null;
+cleanedtable = FILTER cleanedtable5 by class==0 OR class==1;
+
+STORE cleanedtable INTO 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/cleanedtable.json' USING JsonStorage();
+
+
+3) SEPARATING SPAM AND HAM DATASETS AND STORING IT IN GOOGLE BUCKET
+
+filter_spam = FILTER cleanedtable BY class == 1;
+spamgroup= GROUP filter_spam ALL;
+spamcount= FOREACH spamgroup GENERATE COUNT (filter_spam.reviewerID);
+dump spamcount;
+
+filter_ham = FILTER cleanedtable BY class == 0;
+hamgroup= GROUP filter_ham ALL;
+hamcount= FOREACH hamgroup GENERATE COUNT (filter_ham.reviewerID);
+dump hamcount;
+
+STORE filter_spam INTO 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Spam_dataset.json' USING JsonStorage();
+
+STORE filter_ham INTO 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Ham_dataset.json' USING JsonStorage();
+
+4) LOADING THE SPAM AND HAM DATASETS FROM GOOGLE BUCKET
+
+spamtest = LOAD 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Spam_dataset.json' USING JsonLoader('id:(oid:chararray), reviewerID:chararray, reviewerName:chararray, reviewText:chararray, class:int');
+spamgroup= GROUP spamtest ALL;
+spamcount= FOREACH spamgroup GENERATE COUNT (spamtest.reviewerID);
+dump spamcount;
+
+hamtest = LOAD 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Ham_dataset.json' USING JsonLoader('id:(oid:chararray), reviewerID:chararray, reviewerName:chararray, reviewText:chararray, class:int');
+hamgroup= GROUP hamtest ALL;
+hamcount= FOREACH hamgroup GENERATE COUNT (hamtest.reviewerID);
+dump hamcount;
+
+
+
+5) FINDING OUT THE SPAM AND HAM KEYWORDS
+
+spamwords = FOREACH spamtest GENERATE FLATTEN(TOKENIZE(reviewText)) as word;
+spamgroup = GROUP spamwords BY word;
+wordcount = FOREACH spamgroup GENERATE group, COUNT(spamwords);
+DUMP wordcount;
+
+hamwords = FOREACH hamtest GENERATE FLATTEN(TOKENIZE(reviewText)) as word1;
+hamgroup = GROUP hamwords BY word1;
+wordcountham = FOREACH hamgroup GENERATE group, COUNT(hamwords);
+DUMP wordcountham;
+
+6) COUNTING THE TOP 10 SPAM AND HAM KEYWORDS (extra)
+
+hamtest = LOAD 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Ham_dataset.json' USING JsonLoader('id:(oid:chararray), reviewerID:chararray, reviewerName:chararray, reviewText:chararray, class:int');
+hamwords = FOREACH hamtest GENERATE FLATTEN(TOKENIZE(reviewText)) as word1;
+hamgroup = GROUP hamwords BY word1;
+
+wordcountham = FOREACH hamgroup GENERATE group as words, COUNT(hamwords) as count;
+orderedham= ORDER wordcountham BY count DESC;
+
+hamWithoutStopWords= FILTER orderedham BY  words !='a' AND words != 'able' AND words != 'about' AND words != 'across' AND words != 'after' AND words != 'all' AND words != 'almost' AND words != 'also' AND words != 'am' AND words != 'among' AND words != 'an' AND words != 'and' AND words != 'any' AND words != 'are' AND words != 'as' AND words != 'at' AND words != 'be' AND words != 'because' AND words != 'been' AND words != 'but' AND words != 'by' AND words != 
+            'can' AND words != 'cannot' AND words != 'could' AND words != 'dear' AND words != 'did' AND words != 'do' AND words != 'does' AND words != 'either' AND words != 'else' AND words != 'ever' AND words != 'every' AND words != 'for' AND words != 'from' AND words != 'get' AND words != 'got' AND words != 'had' AND words != 'has' AND words != 'have' AND words != 'he' AND words != 'her' AND words != 'hers' AND words != 
+            'him' AND words != 'his' AND words != 'how' AND words != 'however' AND words != 'i' AND words != 'if' AND words != 'in' AND words != 'into' AND words != 'is' AND words != 'it' AND words != 'its' AND words != 'just' AND words != 'least' AND words != 'let' AND words != 'like' AND words != 'likely' AND words != 'may' AND words != 'me' AND words != 'might' AND words != 'most' AND words != 'must' AND words != 'my' AND words != 
+            'neither' AND words != 'no' AND words != 'nor' AND words != 'not' AND words != 'of' AND words != 'off' AND words != 'often' AND words != 'on' AND words != 'only' AND words != 'or' AND words != 'other' AND words != 'our' AND words != 'own' AND words != 'rather' AND words != 'said' AND words != 'say' AND words != 'says' AND words != 'she' AND words != 'should' AND words != 'since' AND words != 'so' AND words != 
+            'some' AND words != 'than' AND words != 'that' AND words != 'the' AND words != 'their' AND words != 'them' AND words != 'then' AND words != 'there' AND words != 'these' AND words != 'they' AND words != 'this' AND words != 'tis' AND words != 'to' AND words != 'too' AND words != 'twas' AND words != 'us' AND words != 'wants' AND words != 'was' AND words != 'we' AND words != 'were' AND words != 'what' AND words != 
+            'when' AND words != 'where' AND words != 'which' AND words != 'while' AND words != 'who' AND words != 'whom' AND words != 'why' AND words != 'will' AND words != 'with' AND words != 'would' AND words != 'yet' AND words != 'you' AND words != 'your' AND words != 'good' AND words != 'very' AND words != 'dont';
+			
+top10ham= LIMIT hamWithoutStopWords 10;
+dump top10ham;
+
+
+spamtest = LOAD 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Spam_dataset.json' USING JsonLoader('id:(oid:chararray), reviewerID:chararray, reviewerName:chararray, reviewText:chararray, class:int');
+spamwords = FOREACH spamtest GENERATE FLATTEN(TOKENIZE(reviewText)) as word;
+spamgroup = GROUP spamwords BY word;
+wordcountspam = FOREACH spamgroup GENERATE group as words, COUNT(spamwords) as count;
+orderedspam= ORDER wordcountspam BY count DESC;
+
+spamWithoutStopWords= FILTER orderedspam BY  words !='a' AND words != 'able' AND words != 'about' AND words != 'across' AND words != 'after' AND words != 'all' AND words != 'almost' AND words != 'also' AND words != 'am' AND words != 'among' AND words != 'an' AND words != 'and' AND words != 'any' AND words != 'are' AND words != 'as' AND words != 'at' AND words != 'be' AND words != 'because' AND words != 'been' AND words != 'but' AND words != 'by' AND words != 
+            'can' AND words != 'cannot' AND words != 'could' AND words != 'dear' AND words != 'did' AND words != 'do' AND words != 'does' AND words != 'either' AND words != 'else' AND words != 'ever' AND words != 'every' AND words != 'for' AND words != 'from' AND words != 'get' AND words != 'got' AND words != 'had' AND words != 'has' AND words != 'have' AND words != 'he' AND words != 'her' AND words != 'hers' AND words != 
+            'him' AND words != 'his' AND words != 'how' AND words != 'however' AND words != 'i' AND words != 'if' AND words != 'in' AND words != 'into' AND words != 'is' AND words != 'it' AND words != 'its' AND words != 'just' AND words != 'least' AND words != 'let' AND words != 'like' AND words != 'likely' AND words != 'may' AND words != 'me' AND words != 'might' AND words != 'most' AND words != 'must' AND words != 'my' AND words != 
+            'neither' AND words != 'no' AND words != 'nor' AND words != 'not' AND words != 'of' AND words != 'off' AND words != 'often' AND words != 'on' AND words != 'only' AND words != 'or' AND words != 'other' AND words != 'our' AND words != 'own' AND words != 'rather' AND words != 'said' AND words != 'say' AND words != 'says' AND words != 'she' AND words != 'should' AND words != 'since' AND words != 'so' AND words != 
+            'some' AND words != 'than' AND words != 'that' AND words != 'the' AND words != 'their' AND words != 'them' AND words != 'then' AND words != 'there' AND words != 'these' AND words != 'they' AND words != 'this' AND words != 'tis' AND words != 'to' AND words != 'too' AND words != 'twas' AND words != 'case' AND words != 'us' AND words != 'wants' AND words != 'was' AND words != 'we' AND words != 'were' AND words != 'what' AND words != 
+            'when' AND words != 'where' AND words != 'which' AND words != 'while' AND words != 'who' AND words != 'whom' AND words != 'why' AND words != 'will' AND words != 'with' AND words != 'would' AND words != 'yet' AND words != 'you' AND words != 'your' AND words != 'good' AND words != 'very' AND words != 'dont' AND words != 'phone' AND words != 'use' AND words != 'iphone';
+			
+
+top10spam= LIMIT spamWithoutStopWords 10;
+dump top10spam;
+
+7) FINDING TOP 10 SPAM ACCOUNTS STORING THE RESULT IN GOOGLE BUCKET
+spamtest = LOAD 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Spam_dataset.json' USING JsonLoader('id:(oid:chararray), reviewerID:chararray, reviewerName:chararray, reviewText:chararray, summary:chararray, class:int');
+
+
+spamReviewerGroup = GROUP spamtest by reviewerID;
+spamReviewerCount = FOREACH spamReviewerGroup GENERATE FLATTEN(group) as reviewerID, COUNT($1) as count;
+spamReviewerOrdered= ORDER spamReviewerCount by count DESC;
+top10SpamReviewer= LIMIT spamReviewerOrdered 10;
+dump top10SpamReviewer;
+
+SpamTotalData1= JOIN top10SpamReviewer by reviewerID, spamtest by reviewerID;
+
+SpamTotalData= FOREACH SpamTotalData1 GENERATE top10SpamReviewer::reviewerID as reviewerID, spamtest::reviewerName as reviewerName, spamtest::reviewText as reviewText;
+dump SpamTotalData;
+
+STORE SpamTotalData INTO 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/SpamDataForTFIDF.json' USING JsonStorage();
+
+
+SpamNameAndId= FOREACH SpamTotalData1 GENERATE top10SpamReviewer::reviewerID as reviewerID, spamtest::reviewerName as reviewerName, top10SpamReviewer::count as count;
+SpamNameAndId1= DISTINCT SpamNameAndId;
+SpamNameAndIdOrdered= ORDER SpamNameAndId1 by count DESC;
+Dump SpamNameAndIdOrdered;
+
+STORE SpamNameAndId1 INTO 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Top10SpamAccount.json' USING JsonStorage();
+
+
+8) FINDING TOP 10 SPAM ACCOUNTS AND STORING THE RESULT IN GOOGLE BUCKET
+hamtest = LOAD 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Ham_dataset.json' USING JsonLoader('id:(oid:chararray), reviewerID:chararray, reviewerName:chararray, reviewText:chararray, summary:chararray, class:int');
+
+hamReviewerGroup = GROUP hamtest by reviewerID;
+hamReviewerCount = FOREACH hamReviewerGroup GENERATE FLATTEN(group) as reviewerID, COUNT($1) as count;
+hamReviewerOrdered= ORDER hamReviewerCount by count DESC;
+top10hamReviewer= LIMIT hamReviewerOrdered 10;
+dump top10hamReviewer;
+
+HamTotalData1= JOIN top10hamReviewer by reviewerID, hamtest by reviewerID;
+
+HamTotalData= FOREACH HamTotalData1 GENERATE top10hamReviewer::reviewerID as reviewerID, hamtest::reviewerName as reviewerName, hamtest::reviewText as reviewText;
+dump HamTotalData;
+
+STORE HamTotalData INTO 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/HamDataForTFIDF.json' USING JsonStorage();
+
+HamNameAndId= FOREACH HamTotalData1 GENERATE top10hamReviewer::reviewerID as reviewerID, hamtest::reviewerName as reviewerName, top10hamReviewer::count as count;
+HamNameAndId1= DISTINCT HamNameAndId;
+HamNameAndIdOrdered= ORDER HamNameAndId1 by count DESC
+dump HamNameAndIdOrdered
+
+STORE HamNameAndId1 INTO 'gs://dataproc-staging-us-central1-24631865637-6nswal7o/google-cloud-dataproc-metainfo/edab7e1e-e9ba-4097-bace-b003096eb0fa/cluster-spam-m/Top10HamAccount.json' USING JsonStorage();
+
+
+
+
+
