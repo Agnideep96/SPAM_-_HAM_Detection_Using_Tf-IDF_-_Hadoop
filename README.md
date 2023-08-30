@@ -1,5 +1,5 @@
-# CA_675 Spam or Ham Detection
-This project is performed on GCP Dataproc cluster with the aid of Pig, Hive and MapReduce
+Spam or Ham Detection
+This project is performed on GCP Dataproc cluster with the aid of Pig, Hive and MapReduce to find the Top spam and ham keywords of a big data dataset
 
 
 
